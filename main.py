@@ -77,7 +77,7 @@ print(negative_word_count.most_common(20))
 positive_word_count = Counter(positive_words)
 print(positive_word_count.most_common(20))
 
-#########################################################################################
+#####################################################################################################
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
 text_len = train_data[train_data['label'] == 1]['tokenized'].map(lambda x: len(x))
