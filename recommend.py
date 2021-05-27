@@ -1,6 +1,7 @@
 import pymysql
 import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
+import collections
 
 HOST = 'database-1.cfi9ak8locdw.ap-northeast-2.rds.amazonaws.com'
 PORT = 3306
@@ -59,12 +60,15 @@ dbcol=[]
 for i in range(len(pddbarray)):
     dbcol.append(pddbarray[i].split('_'))
 
-#df
-pddbarray_df=pd.DataFrame(pddbarray)
-print(pddbarray_df)
+#인기상품
+counts = collections.Counter(pddbarray)
+hot = counts.most_common(1)[0][0]
 
+#원래 df (중복상품 제거 전)
+pddbarray_df=pd.DataFrame(pddbarray)
+
+#user-item 데이터프레임생성
 user_item_df = pddbarray_df.groupby(['user_id'])['pd'].apply(','.join).reset_index()
-print("user_item_df",user_item_df)
 
 #중복상품 제거 ->item 명으로 사용
 pdarray=df['pd'].unique()
@@ -72,30 +76,20 @@ pdarray_df = pd.DataFrame(pdarray)
 
 #user 명으로 사용
 username = user_item_df['user_id']
-print(username)
 
 #중복상품 제거 한 후의 [pd_no,subcate_no,category_no]배열 생성 -> 나중에 상품 구분할 때 쓰일 예정
 col=[]
 for i in range(len(pdarray)):
     col.append(pdarray[i].split('_'))
-print(col)
 
+#행번호 user_id로
 user_item_df1=user_item_df.set_index('user_id')
-print(user_item_df1)
 
 #user_item_df1와 pdarray 비교하여 값 겹치는 인덱스번호 모음 배열
 idx=[]
-# for i in range(len(pddbarray)):
-#     for j in range(len(pdarray)):
-#         if pddbarray[i]==pdarray[j]:
-#             idx.append(j)
-
 pdslice=[]
 for i in range(len(user_item_df1)):
     pdslice.append(user_item_df1.pd[i].split(","))
-
-print("pdslice",pdslice)
-print(len(pdslice))
 
 for i in range(len(pdslice)):
     line = []
@@ -105,13 +99,11 @@ for i in range(len(pdslice)):
                 line.append(k)
     idx.append(line)
 
-print(idx)
-print(len(idx))
-
+#dataframe -> list로
 userarray = username.tolist()
+
 #pdarray로 데이터프레임 생성 -> mydf
 mydf = pd.DataFrame(user_item_df1,columns=pdarray)
-print("mydf",mydf)
 
 #데이터 변경 쉽게하기 위하여 dataframe->list로 변환
 mydf_list = mydf.values.tolist()
@@ -121,12 +113,9 @@ for i,v in enumerate(idx):
     for j,k in enumerate(v):
         mydf_list[i][k]=1
 
-
 #다시 dataframe으로 변경
 mydf1 = pd.DataFrame(mydf_list,columns=pdarray,index=userarray)
 print("mydf1",mydf1)
-
-
 
 #아이템기반으로 해야하니 행 열 전환
 mydf1 = mydf1.transpose()
@@ -140,8 +129,6 @@ print(mydf1)
 
 #아이템 코사인 유사도 구하기
 item_based = cosine_similarity(mydf1)
-print(item_based)
-
 item_based = pd.DataFrame(data = item_based, index = pdarray, columns= pdarray)
 print(item_based.head())
 
@@ -151,8 +138,13 @@ print(item_based.head())
 #
 # print(get_item_based("11_기타주방가구_주방가구"))
 
-#한 상품이름에 대해 8개 추천 코사인유사도도 함께 출력
+################# 한 상품이름에 대해 8개 추천 코사인유사도도 함께 출력 ###############################
 recommend=[]
 for i in pdarray:
     recommend.append(item_based[i].sort_values(ascending=False)[:8])
-print(recommend)
+#print(recommend)
+
+##################  user 데이터 없을 때 인기상품 1개 관련 상품 보여주기 ############################
+nodata_user=[]
+nodata_user.append(item_based[hot].sort_values(ascending=False)[:8])
+print(nodata_user)
