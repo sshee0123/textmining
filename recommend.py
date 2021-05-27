@@ -133,18 +133,21 @@ item_based = pd.DataFrame(data = item_based, index = pdarray, columns= pdarray)
 print(item_based.head())
 
 #user가 어떤 상품 구매하거나 좋아요 눌렀을 때 추천해주는 함수
-# def get_item_based(pdname):
-#     return item_based[pdname].sort_values(ascending=False)[:8]
-#
-# print(get_item_based("11_기타주방가구_주방가구"))
+def recommend(pdname):
+    return dict(item_based[pdname].sort_values(ascending=False)[:8])
 
-################# 한 상품이름에 대해 8개 추천 코사인유사도도 함께 출력 ###############################
-recommend=[]
-for i in pdarray:
-    recommend.append(item_based[i].sort_values(ascending=False)[:8])
-#print(recommend)
+print(recommend("11_기타주방가구_주방가구"))
+
+# ################# 한 상품이름에 대해 8개 추천 코사인유사도도 함께 출력 ###############################
+# recommend=[]
+# for i in pdarray:
+#     recommend.append(item_based[i].sort_values(ascending=False)[:8])
+# #print(recommend)
 
 ##################  user 데이터 없을 때 인기상품 1개 관련 상품 보여주기 ############################
-nodata_user=[]
-nodata_user.append(item_based[hot].sort_values(ascending=False)[:8])
-print(nodata_user)
+# nodata_user=[]
+# nodata_user.append(item_based[hot].sort_values(ascending=False)[:8])
+# print(nodata_user)
+
+def nouserdata(pdname):
+    return dict(item_based[hot].sort_values(ascending=False)[:8])
