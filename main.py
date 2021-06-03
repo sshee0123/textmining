@@ -1,180 +1,166 @@
+# -- coding: utf-8 --
+from flask import Flask
+from flask_cors import CORS
+import urllib.request
+
+import pymysql
 import pandas as pd
+from sklearn.metrics.pairwise import cosine_similarity
+import collections
 import numpy as np
-import matplotlib.pyplot as plt
-from konlpy.tag import Okt
-from tensorflow.keras.preprocessing.text import Tokenizer
-from collections import Counter
+from flask import request
 
-from sklearn.model_selection import train_test_split
-from tensorflow.python.keras.preprocessing.sequence import pad_sequences
+HOST = 'database-1.cfi9ak8locdw.ap-northeast-2.rds.amazonaws.com'
+PORT = 3306
+USER = 'admin'
+PASSWORD = 'dzbz2021'
 
-from tensorflow.keras.layers import Embedding, Dense, GRU
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.models import load_model
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-
-okt = Okt()
-
-def freq(review):
-    for i, v in enumerate(review):
-        if len(v) < 2:
-            review.pop(i)
-
-    count = Counter(review)
-    return count
-
-def below_threshold_len(max_len, nested_list):
-    cnt = 0
-    for s in nested_list:
-        if (len(s) <= max_len):
-            cnt = cnt + 1
-    print('전체 샘플 중 길이가 %s 이하인 샘플의 비율: %s' % (max_len, (cnt / len(nested_list)) * 100))
+app = Flask(__name__)
+CORS(app)
+app.config['JSON_AS_ASCII'] = False
 
 
-stopwords = ['도', '는', '다', '의', '가', '이', '은', '한', '에', '하', '고', '을', '를', '인', '듯', '과', '와', '네', '들', '듯', '지',
-             '임', '게']
+# MySQL Connection 연결
+conn = pymysql.connect(host=HOST, port=PORT, user=USER, password=PASSWORD, db='boardback', charset='utf8')
 
-total_data = pd.read_csv('./storageReview2.csv', sep=',')
-total_data['label'] = np.select([total_data.star > 3], [1], default=0)
+# Connection 으로부터 Cursor 생성
+curs1 = conn.cursor()
+curs2 = conn.cursor()
 
-#total_data.drop_duplicates(subset=['review'], inplace=True)  # 중복제거 -> 변화없지만 그래도
+# SQL문 실행
+sql1 = "select user_id,pd_no,subcate_no,category_no from LikeList"
+# sql1 = "select user_id, pd_no, l.subcate_no, l.category_no from LikeList l " \
+#        "left join PurchaseList p " \
+#        "on l.user_id=p.user_id and l.pd_no=p.pd_no and l.subcate_no=p.subcate_no and l.category_no=p.category_no"\
+#        "union all" \
+#        "select l.user_id, l.pd_no, l.subcate_no, l.category_no from LikeList l " \
+#        "right join PurchaseList p"\
+#        "on l.user_id=p.user_id and l.pd_no=p.pd_no and l.subcate_no=p.subcate_no and l.category_no=p.category_no"\
+#        "where l.user_id is not null"
 
-train_data, test_data = train_test_split(total_data, test_size=0.25, random_state=42)
-print('훈련용 리뷰의 개수 :', len(train_data))
-print('테스트용 리뷰의 개수 :', len(test_data))
+curs1.execute(sql1)
+sql2 = "select user_id,pd_no,subcate_no,category_no from PurchaseList"
+curs2.execute(sql2)
 
-print(train_data.groupby('label').size().reset_index(name = 'count'))
+######################################## 데이터 전처리 시작 ###################################
 
-# 한글과 공백을 제외하고 모두 제거
-train_data['review'] = train_data['review'].str.replace("[^ㄱ-ㅎㅏ-ㅣ가-힣 ]", "")
-train_data['review'].replace('', np.nan, inplace=True)
-print(train_data.isnull().sum())
+# 데이타 Fetch
+rows1 = curs1.fetchall()
+#print(rows1)
+#print(len(rows1))
+rows2 = curs2.fetchall()
+#print(rows2)
+#print(len(rows2))
 
-test_data.drop_duplicates(subset = ['review'], inplace=True) # 중복 제거
-test_data['review'] = test_data['review'].str.replace("[^ㄱ-ㅎㅏ-ㅣ가-힣 ]", "")  # 정규 표현식 수행
-test_data['review'].replace('', np.nan, inplace=True)  # 공백은 Null 값으로 변경
-test_data = test_data.dropna(how='any') # Null 값 제거
-print('전처리 후 테스트용 샘플의 개수 :',len(test_data))
+dfcol = ['user_id', 'pd_no', 'subcate_no', 'category_no']
 
+# dataframe 만들기
+df1 = pd.DataFrame(rows1, columns=dfcol)
+df2 = pd.DataFrame(rows2, columns=dfcol)
+df = pd.concat([df1, df2])
 
+# user_id를 행번호로
+df = df.set_index('user_id')
 
+# 3개 칼럼 하나의 아이템이름으로 합치기
+pdcol = ["pd_no", "subcate_no", "category_no"]
+df['pd'] = df[pdcol].apply(lambda row: '_'.join(row.values.astype(str)), axis=1)
 
+# db데이터 상품 배열
+pddbarray = df['pd']
+dbcol = []
+for i in range(len(pddbarray)):
+    dbcol.append(pddbarray[i].split('_'))
 
-train_data['tokenized'] = train_data['review'].apply(okt.morphs)
-train_data['tokenized'] = train_data['tokenized'].apply(lambda x: [item for item in x if item not in stopwords])
+# 인기상품
+counts = collections.Counter(pddbarray)
+hot = counts.most_common(1)[0][0]
 
-test_data['tokenized'] = test_data['review'].apply(okt.morphs)
-test_data['tokenized'] = test_data['tokenized'].apply(lambda x: [item for item in x if item not in stopwords])
+# 원래 df (중복상품 제거 전)
+pddbarray_df = pd.DataFrame(pddbarray)
 
-print(train_data)
+# user-item 데이터프레임생성
+user_item_df = pddbarray_df.groupby(['user_id'])['pd'].apply(','.join).reset_index()
 
-negative_words = np.hstack(train_data[train_data.label == 0]['tokenized'].values)
-positive_words = np.hstack(train_data[train_data.label == 1]['tokenized'].values)
+# 중복상품 제거 ->item 명으로 사용
+pdarray = df['pd'].unique()
+pdarray_df = pd.DataFrame(pdarray)
 
-negative_word_count = Counter(negative_words)
-print(negative_word_count.most_common(20))
+# user 명으로 사용
+username = user_item_df['user_id']
 
-positive_word_count = Counter(positive_words)
-print(positive_word_count.most_common(20))
+# 중복상품 제거 한 후의 [pd_no,subcate_no,category_no]배열 생성 -> 나중에 상품 구분할 때 쓰일 예정
+col = []
+for i in range(len(pdarray)):
+    col.append(pdarray[i].split('_'))
 
-#####################################################################################################
+# 행번호 user_id로
+user_item_df1 = user_item_df.set_index('user_id')
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
-text_len = train_data[train_data['label'] == 1]['tokenized'].map(lambda x: len(x))
-ax1.hist(text_len, color='red')
-ax1.set_title('Positive Reviews')
-ax1.set_xlabel('length of samples')
-ax1.set_ylabel('number of samples')
-print('긍정 리뷰의 평균 길이 :', np.mean(text_len))
+# user_item_df1와 pdarray 비교하여 값 겹치는 인덱스번호 모음 배열
+idx = []
+pdslice = []
+for i in range(len(user_item_df1)):
+    pdslice.append(user_item_df1.pd[i].split(","))
 
-text_len = train_data[train_data['label'] == 0]['tokenized'].map(lambda x: len(x))
-ax2.hist(text_len, color='blue')
-ax2.set_title('Negative Reviews')
-fig.suptitle('Words in texts')
-ax2.set_xlabel('length of samples')
-ax2.set_ylabel('number of samples')
-print('부정 리뷰의 평균 길이 :', np.mean(text_len))
-plt.show()
+for i in range(len(pdslice)):
+    line = []
+    for j in range(len(pdslice[i])):
+        for k in range(len(pdarray)):
+            if pdslice[i][j] == pdarray[k]:
+                line.append(k)
+    idx.append(line)
 
-X_train = train_data['tokenized'].values
-y_train = train_data['label'].values
-X_test = test_data['tokenized'].values
-y_test = test_data['label'].values
+# dataframe -> list로
+userarray = username.tolist()
 
-####################################여기부터 문제 쿠다텐서플로우#################################################
+# pdarray로 데이터프레임 생성 -> mydf
+mydf = pd.DataFrame(user_item_df1, columns=pdarray)
 
-tokenizer = Tokenizer()
-tokenizer.fit_on_texts(X_train)
+# 데이터 변경 쉽게하기 위하여 dataframe->list로 변환
+mydf_list = mydf.values.tolist()
 
-threshold = 2
-total_cnt = len(tokenizer.word_index)  # 단어의 수
-rare_cnt = 0  # 등장 빈도수가 threshold보다 작은 단어의 개수를 카운트
-total_freq = 0  # 훈련 데이터의 전체 단어 빈도수 총 합
-rare_freq = 0  # 등장 빈도수가 threshold보다 작은 단어의 등장 빈도수의 총 합
+# idx의 배열의 인덱스는 mydf의 행, idx의 배열의 값은 그 mydf의 행의 열값 1로 변경
+for i, v in enumerate(idx):
+    for j, k in enumerate(v):
+        mydf_list[i][k] = 1
 
-# 단어와 빈도수의 쌍(pair)을 key와 value로 받는다.
-for key, value in tokenizer.word_counts.items():
-    total_freq = total_freq + value
+# 다시 dataframe으로 변경
+mydf1 = pd.DataFrame(mydf_list, columns=pdarray, index=userarray)
+print("mydf1", mydf1)
 
-    # 단어의 등장 빈도수가 threshold보다 작으면
-    if (value < threshold):
-        rare_cnt = rare_cnt + 1
-        rare_freq = rare_freq + value
+# 아이템기반으로 해야하니 행 열 전환
+mydf1 = mydf1.transpose()
+print(mydf1)
 
-print('단어 집합(vocabulary)의 크기 :', total_cnt)
-print('등장 빈도가 %s번 이하인 희귀 단어의 수: %s' % (threshold - 1, rare_cnt))
-print("단어 집합에서 희귀 단어의 비율:", (rare_cnt / total_cnt) * 100)
-print("전체 등장 빈도에서 희귀 단어 등장 빈도 비율:", (rare_freq / total_freq) * 100)
+# NaN -> 0으로 채워주기
+mydf1 = mydf1.fillna(0)
+print(mydf1)
 
-############################## 여기까지 되는거 확인함 ##############################
-vocab_size = total_cnt - rare_cnt + 2
-print('단어 집합의 크기 :', vocab_size)
+########################### 아이템 기반 협업필터링 #########################
 
-tokenizer = Tokenizer(vocab_size, oov_token='OOV')
-tokenizer.fit_on_texts(X_train)
-X_train = tokenizer.texts_to_sequences(X_train)
-X_test = tokenizer.texts_to_sequences(X_test)
-
-print('리뷰의 최대 길이 :', max(len(l) for l in X_train))
-print('리뷰의 평균 길이 :', sum(map(len, X_train)) / len(X_train))
-plt.hist([len(s) for s in X_train], bins=50)
-plt.xlabel('length of samples')
-plt.ylabel('number of samples')
-plt.show()
-
-
-max_len = 100
-below_threshold_len(max_len, X_train)
-
-X_train = pad_sequences(X_train, maxlen=max_len)
-X_test = pad_sequences(X_test, maxlen=max_len)
-
-model = Sequential()
-model.add(Embedding(vocab_size, 100))
-model.add(GRU(128))
-model.add(Dense(1, activation='sigmoid'))
-
-es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=4)
-mc = ModelCheckpoint('best_model.h5', monitor='val_acc', mode='max', verbose=1, save_best_only=True)
-
-model.compile(optimizer='rmsprop', loss='binary_crossentropy', metrics=['acc'])
-history = model.fit(X_train, y_train, epochs=15, callbacks=[es, mc], batch_size=60, validation_split=0.2)
-
-loaded_model = load_model('best_model.h5')
-print("\n 테스트 정확도: %.4f" % (loaded_model.evaluate(X_test, y_test)[1]))
-
-def sentiment_predict(new_sentence):
-    new_sentence = okt.morphs(new_sentence)  # 토큰화
-    new_sentence = [word for word in new_sentence if not word in stopwords]  # 불용어 제거
-    encoded = tokenizer.texts_to_sequences([new_sentence])  # 정수 인코딩
-    pad_new = pad_sequences(encoded, maxlen=max_len)  # 패딩
-    score = float(loaded_model.predict(pad_new))  # 예측
-    if (score > 0.5):
-        print("{:.2f}% 확률로 긍정 리뷰입니다.".format(score * 100))
-    else:
-        print("{:.2f}% 확률로 부정 리뷰입니다.".format((1 - score) * 100))
+# 아이템 코사인 유사도 구하기
+item_based = cosine_similarity(mydf1)
+item_based = pd.DataFrame(data=item_based, index=pdarray, columns=pdarray)
+print(item_based.head())
 
 
 
+################# 한 상품이름에 대해 8개 추천 코사인유사도도 함께 출력 ###############################
+@app.route("/rec/recommend", methods=['POST'])
+def recommend():
+    json = request.json
+    pdNo = json['pdNo']
+    subcateNo = json['subcateNo']
+    categoryNo = json['categoryNo']
+    pdname = str(pdNo)+"_"+subcateNo+"_"+categoryNo
+    print(pdname)
+    return dict(item_based[pdname].sort_values(ascending=False)[:8])
 
-sentiment_predict('잘 쓰고 있어요. 설치 간단해서 좋네요.')
+##################  user 데이터 없을 때 인기상품 1개 관련 상품 보여주기 ############################
+@app.route("/rec/nodata")
+def nouserdata():
+    return dict(item_based[hot].sort_values(ascending=False)[:8])
+
+if __name__ == '__main__':
+    app.run(debug=False, host="127.0.0.1", port=5000)
