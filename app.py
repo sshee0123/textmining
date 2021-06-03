@@ -147,20 +147,18 @@ print(item_based.head())
 ################# 한 상품이름에 대해 8개 추천 코사인유사도도 함께 출력 ###############################
 @app.route("/recommend", methods=['POST'])
 def recommend():
-    print(request.is_json)
-    jsonData = request.get_json()
-    print(jsonData)
-    print(request.json.get('pdNo'))
-    print(jsonData['pdNo'])
+    json = request.json
+    pdNo = json['pdNo']
+    subcateNo = json['subcateNo']
+    categoryNo = json['categoryNo']
+    pdname = str(pdNo)+"_"+subcateNo+"_"+categoryNo
+    print(pdname)
+    return dict(item_based[pdname].sort_values(ascending=False)[:8])
 
-    #return dict(item_based[pdname].sort_values(ascending=False)[:8])
 ##################  user 데이터 없을 때 인기상품 1개 관련 상품 보여주기 ############################
 @app.route("/nodata")
 def nouserdata():
     return dict(item_based[hot].sort_values(ascending=False)[:8])
-
-
-
 
 if __name__ == '__main__':
     app.run(debug=False, host="127.0.0.1", port=5000)
