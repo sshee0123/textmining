@@ -1,5 +1,6 @@
 # -- coding: utf-8 --
 from flask import Flask
+#from flask_cors import CORS
 import urllib.request
 
 import pymysql
@@ -8,6 +9,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 import collections
 import numpy as np
 from flask import request
+#from flask_cors import CORS
+import pickle
 
 HOST = 'database-1.cfi9ak8locdw.ap-northeast-2.rds.amazonaws.com'
 PORT = 3306
@@ -15,6 +18,7 @@ USER = 'admin'
 PASSWORD = 'dzbz2021'
 
 app = Flask(__name__)
+# CORS(app)
 app.config['JSON_AS_ASCII'] = False
 
 
@@ -145,7 +149,7 @@ print(item_based.head())
 
 
 ################# 한 상품이름에 대해 8개 추천 코사인유사도도 함께 출력 ###############################
-@app.route("/recommend", methods=['POST'])
+@app.route("/rec/recommend", methods=['POST'])
 def recommend():
     json = request.json
     pdNo = json['pdNo']
@@ -156,9 +160,54 @@ def recommend():
     return dict(item_based[pdname].sort_values(ascending=False)[:8])
 
 ##################  user 데이터 없을 때 인기상품 1개 관련 상품 보여주기 ############################
-@app.route("/nodata")
+@app.route("/rec/nodata")
 def nouserdata():
     return dict(item_based[hot].sort_values(ascending=False)[:8])
+
+
+@app.route("/rec/predict", methods=['POST'])
+def reviewPrediction():
+    json = request.json
+    pdNo = json['pdNo']
+    subcateNo = json['subcateNo']
+    categoryNo = json['categoryNo']
+    review = json['review']
+    if categoryNo == "침실가구":
+        filename = 'bedpipe.dat'
+    elif categoryNo == "수납가구":
+        filename = 'storagepipe.dat'
+    elif categoryNo == "거실가구":
+        filename = 'livingpipe.dat'
+    else: return
+    result = ""
+    with open(filename, 'rb') as fp:
+        pipe = pickle.load(fp)
+
+        # #test_data가 새로 들어온 리뷰의 텍스트여야함
+        # for i in range(len(test_data)):
+        #     text = test_data[i]
+        str=[review]
+        #str = ["매트리스가 높네요ㅠ"]
+
+        # 예측 정확도 ->
+        r1 = np.max(pipe.predict_proba(str) * 100)
+         # 예측 결과
+        r2 = pipe.predict(str)[0]
+
+        if r2 == 0:
+            print(str)
+            #print('정확도 : %.3f' % r1,'로 부정적 리뷰입니다.')
+            acc = format(r1, '.3f')
+            result = '정확도 : ' + acc + '로 부정적 리뷰입니다.'
+
+            print(result)
+        elif r2== 1:
+            print(str)
+            acc = format(r1, '.3f')
+            result = '정확도 : ' + acc + '로 긍정적 리뷰입니다.'
+        return result
+
+
 
 if __name__ == '__main__':
     app.run(debug=False, host="127.0.0.1", port=5000)
