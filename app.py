@@ -157,7 +157,12 @@ def recommend():
     categoryNo = json['categoryNo']
     pdname = str(pdNo)+"_"+subcateNo+"_"+categoryNo
     print(pdname)
-    return dict(item_based[pdname].sort_values(ascending=False)[:6])
+    return dict(item_based[pdname].sort_values(ascending=False))
+    # try:
+    #     result = dict(item_based[pdname].sort_values(ascending=False))
+    # except KeyError as e:
+    #     return None
+    return result
 
 ##################  user 데이터 없을 때 인기상품 1개 관련 상품 보여주기 ############################
 @app.route("/rec/nodata")
