@@ -157,12 +157,12 @@ def recommend():
     categoryNo = json['categoryNo']
     pdname = str(pdNo)+"_"+subcateNo+"_"+categoryNo
     print(pdname)
-    return dict(item_based[pdname].sort_values(ascending=False)[:8])
+    return dict(item_based[pdname].sort_values(ascending=False)[:6])
 
 ##################  user 데이터 없을 때 인기상품 1개 관련 상품 보여주기 ############################
 @app.route("/rec/nodata")
 def nouserdata():
-    return dict(item_based[hot].sort_values(ascending=False)[:8])
+    return dict(item_based[hot].sort_values(ascending=False)[:6])
 
 
 @app.route("/rec/predict", methods=['POST'])
